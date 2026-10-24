@@ -9,7 +9,7 @@
 // 适合演示 / 团队试用规模；数据量继续增长时可平滑替换为多表结构。
 // ============================================
 
-import { Pool } from "pg-pool";
+import { Pool } from "pg";
 import type {
   Conversation,
   Evaluation,
