@@ -161,14 +161,14 @@ export function MathText({ children, displayMode = false, className = "" }: Math
   if (html.bare) {
     return (
       <span
-        className={`math-content ${className}`}
+        className={`math-content whitespace-pre-wrap break-words ${className}`}
         dangerouslySetInnerHTML={{ __html: html.bare }}
       />
     );
   }
 
   return (
-    <span className={`math-content ${className}`}>
+    <span className={`math-content whitespace-pre-wrap break-words ${className}`}>
       {html.segments.map((seg, i) => {
         if (seg.type === "text") {
           // 纯文本：保留换行

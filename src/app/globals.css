@@ -21,16 +21,22 @@
   border-color: var(--border);
 }
 
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+::selection {
+  background: #dbeafe;
+  color: #1e3a8a;
 }
 
 /* 滚动条样式 */
@@ -47,4 +53,108 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* KaTeX 在长公式 / 窄屏下的可读性 */
+.math-content .katex {
+  font-size: 1.04em;
+}
+
+.math-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 4px;
+  margin: 0.5em 0;
+}
+
+.math-content .katex-display > .katex {
+  white-space: normal;
+}
+
+/* Toast 进入动画 */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.18s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+/* 可访问性：键盘焦点更明显 */
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* 打印：只保留报告正文 */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  aside,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .shadow-sm,
+  .shadow,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl {
+    box-shadow: none !important;
+  }
+
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+
+  .print\:border-0 {
+    border: 0 !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+
+  a[href]::after {
+    content: "";
+  }
 }

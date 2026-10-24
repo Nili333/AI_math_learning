@@ -189,7 +189,7 @@ export function getWelcomeMessage(conversationId: string): Message {
     conversationId,
     role: "ai",
     content:
-      "欢迎来到本次项目学习！我们现在开始第一个任务：请你先说说，这个易拉罐设计问题里，我们已知哪些条件，需要求解什么呢？",
+      "欢迎来到本次项目学习！我们会通过 5 个递进的小任务，一起把这个真实问题解决掉。\n\n先看左侧的项目背景与题目，然后告诉我：题目中给出了哪些已知条件？我们需要解决的核心问题是什么？",
     sendTime: new Date().toISOString(),
   };
 }

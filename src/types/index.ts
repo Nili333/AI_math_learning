@@ -68,13 +68,23 @@ export interface KnowledgePoint {
 // ============================================
 // 错题记录
 // ============================================
+export interface SolutionStep {
+  stepNo: number;
+  title: string;
+  content: string;
+  explanation?: string;
+}
+
 export interface WrongAnswer {
   id: string;
   userId: string;
   questionId: string;
   question: Question;
   studentAnswer: string;
+  studentAnswerImage?: string;
   correctAnswer?: string;
+  /** AI 生成的详细正确解答过程 */
+  correctSolution?: SolutionStep[];
   studentSteps: {
     stepNo: number;
     content: string;
@@ -127,6 +137,13 @@ export interface TaskAttempt {
   time: string;
 }
 
+// 项目任务内的检查点（AI 生成项目时每个任务自带一套）
+export interface TaskCheckpoint {
+  question: string;
+  acceptKeywords: string[];
+  hints: string[]; // 1~4 级提示，缺省自动补齐
+}
+
 export interface ProjectTask {
   id: string;
   projectId: string;
@@ -137,6 +154,8 @@ export interface ProjectTask {
   completionCriteria: string[]; // 任务完成标准（多条）
   status: TaskStatus;
   studentAnswer?: string;
+  // —— 任务检查点（默认取自任务蓝图；AI 定制项目时随项目生成）——
+  checkpoints?: TaskCheckpoint[];
   // —— 引导过程追踪（AI导师的"大脑"状态）——
   checkpointIndex: number; // 当前检查点序号（从0开始）
   hintLevel: number; // 当前提示级别 0-4（0表示无需提示）
@@ -227,6 +246,7 @@ export interface AnalyzeRequest {
   questionContent: string;
   questionImage?: string;
   studentAnswer: string;
+  studentAnswerImage?: string; // 学生手写解答图片（base64 data URI）
   correctAnswer?: string;
 }
 
@@ -247,6 +267,65 @@ export interface ChatResponse {
   nextTaskId?: string | null; // 下一任务ID（无则 null）
   hintLevel?: number; // 本轮提示级别 0-4
   transitionNotice?: string; // 任务切换提示语，如"很好，任务3完成，进入任务4"
+  conversationId?: string; // 会话ID（服务端持久化）
+}
+
+// ============================================
+// 项目列表摘要（GET /api/projects）
+// ============================================
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  status: "notStarted" | "inProgress" | "completed";
+  progress: number;
+  completedTasks: number;
+  totalTasks: number;
+  currentTaskTitle: string | null;
+  wrongAnswerId: string | null;
+  createTime: string;
+  updatedAt: string;
+}
+
+// ============================================
+// 对话恢复数据（GET /api/projects/{id}/chat）
+// ============================================
+export interface ChatHistoryResponse {
+  project: Project;
+  tasks: ProjectTask[];
+  messages: Message[];
+  conversationId: string;
+  projectCompleted: boolean;
+}
+
+// ============================================
+// 学习报告数据（GET /api/report）
+// ============================================
+export interface ReportData {
+  profile: StudentProfile;
+  projects: ProjectSummary[];
+  wrongAnswers: WrongAnswer[];
+  evaluations: {
+    projectId: string;
+    averageScore: number;
+    createTime: string;
+  }[];
+}
+
+// ============================================
+// 系统状态（GET /api/system/status）
+// ============================================
+export interface SystemStatus {
+  aiConfigured: boolean;
+  model: string;
+  visionModel: string;
+  counts: {
+    wrongAnswers: number;
+    projects: number;
+    conversations: number;
+    evaluations: number;
+  };
+  updatedAt: string;
+  storage?: "postgres" | "file" | string;
 }
 
 // 一轮对话的评估结果（服务端内部使用）

@@ -5,9 +5,9 @@
 // 无 Key：返回 Mock 分析结果
 // ============================================
 
-import { qwenChat, extractText } from "./qwen";
+import { qwenChat, extractText, type QwenContentPart } from "./qwen";
 import { AI_CONFIG, hasRealAIKey } from "./config";
-import type { AnalyzeRequest, WrongAnswer } from "@/types";
+import type { AnalyzeRequest, SolutionStep, WrongAnswer } from "@/types";
 import { errorTypes, knowledgePoints } from "@/mock";
 
 // 解析 AI 返回的 JSON → 构造 WrongAnswer 对象
@@ -18,19 +18,32 @@ interface AnalyzeJsonResult {
   related_ability: string; // 相关能力，如 代数运算能力
   weak_level: "normal" | "needStrengthen" | "focus";
   student_steps: { step_no: number; content: string; is_error: boolean; error_hint?: string }[];
+  correct_solution?: {
+    step_no: number;
+    title: string;
+    content: string;
+    explanation?: string;
+  }[];
 }
 
 export async function analyzeWrongAnswer(
   req: AnalyzeRequest
 ): Promise<WrongAnswer> {
   if (hasRealAIKey()) {
-    return analyzeWithAI(req);
+    try {
+      return await analyzeWithAI(req);
+    } catch (err) {
+      console.error(
+        "[wrongAnswerAnalyzer] AI 分析失败，降级为本地分析：",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
   return analyzeWithMock(req);
 }
 
 async function analyzeWithAI(req: AnalyzeRequest): Promise<WrongAnswer> {
-  const { questionContent, studentAnswer, correctAnswer } = req;
+  const { questionContent, questionImage, studentAnswer, correctAnswer, studentAnswerImage } = req;
 
   const systemPrompt = `你是一位资深高中数学教研员，专门分析学生错题并给出结构化诊断。
 
@@ -40,7 +53,14 @@ async function analyzeWithAI(req: AnalyzeRequest): Promise<WrongAnswer> {
 - 常用：分式 \\frac{a}{b}、根式 \\sqrt{x}、上标 x^2、下标 x_1、希腊字母 \\alpha \\beta
 - 中文说明文字不要放入 $ 分隔符内
 
-你的任务：阅读题目、学生答案和正确答案，精准定位错因并给出分步骤的错误分析。
+你的任务：阅读题目、学生答案（可能含手写解答图片）和正确答案，精准定位错因并给出分步骤的错误分析；同时独立写出这道题的详细正确解答过程。
+
+【正确解答要求】
+1. 必须给出 4~8 个完整步骤，每一步包含：step_no、title（简短小标题）、content（该步的核心式子/结论）、explanation（为什么这样做、用了什么公式）
+2. 要写清楚解题思路的起点、关键变形、方程求解、结果检验，不能只给最终答案
+3. 即使学生答案正确，也要完整写出规范解答
+4. 公式用 LaTeX，中文解释不要放进 $ 分隔符
+5. 最后一步必须给出明确的最终答案
 
 可用错因类型（选其一）：运算错误、概念错误、审题错误、建模错误、公式使用错误、推理错误、表征转换错误、其他
 可用知识点ID（从以下列表中选择）：
@@ -60,25 +80,42 @@ async function analyzeWithAI(req: AnalyzeRequest): Promise<WrongAnswer> {
   "student_steps": [
     {"step_no": 1, "content": "步骤内容", "is_error": false, "error_hint": ""},
     {"step_no": 2, "content": "步骤内容", "is_error": true, "error_hint": "此处出现...错误，注意..."}
+  ],
+  "correct_solution": [
+    {"step_no": 1, "title": "审题与思路", "content": "关键式子或结论", "explanation": "为什么这样做"},
+    {"step_no": 2, "title": "求解", "content": "关键变形", "explanation": "使用的公式与依据"},
+    {"step_no": 3, "title": "最终答案", "content": "最终答案", "explanation": "结论说明"}
   ]
 }`;
 
-  const userMessage = `【题目】${questionContent}
+  const textContent = `【题目】${questionContent}
 ${correctAnswer ? `【正确答案】${correctAnswer}` : ""}
-【学生答案】${studentAnswer}
+【学生答案】${studentAnswer || "（学生未填写文字答案，详见解答图片）"}
 
 请分析这道错题。`;
+
+  // 如果有学生解答图片，使用多模态消息（VL 模型可同时理解文字+图片）
+  let userContent: string | QwenContentPart[] = textContent;
+  let model = AI_CONFIG.model;
+
+  if (studentAnswerImage) {
+    model = AI_CONFIG.vlModel;
+    userContent = [
+      { type: "image_url", image_url: { url: studentAnswerImage } },
+      { type: "text", text: textContent },
+    ];
+  }
 
   const response = await qwenChat(
     [
       { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
+      { role: "user", content: userContent },
     ],
     {
-      model: AI_CONFIG.model,
+      model,
       temperature: 0.3,
       responseFormat: "json_object",
-      maxTokens: 1200,
+      maxTokens: 3000,
     }
   );
 
@@ -112,6 +149,12 @@ ${correctAnswer ? `【正确答案】${correctAnswer}` : ""}
     { stepNo: 3, content: "得出结果", isError: false },
   ];
 
+  const correctSolution = normalizeSolution(
+    parsed.correct_solution,
+    correctAnswer,
+    questionContent
+  );
+
   return {
     id: waId,
     userId: "u_001",
@@ -119,11 +162,14 @@ ${correctAnswer ? `【正确答案】${correctAnswer}` : ""}
     question: {
       id: questionId,
       content: questionContent,
+      imageUrl: questionImage || undefined,
       subject: "数学",
       grade: "高二",
     },
     studentAnswer,
+    studentAnswerImage: studentAnswerImage || undefined,
     correctAnswer: correctAnswer || undefined,
+    correctSolution,
     studentSteps: steps,
     errorTypeId: matchedErrorType.id,
     errorType: matchedErrorType,
@@ -138,7 +184,7 @@ ${correctAnswer ? `【正确答案】${correctAnswer}` : ""}
 }
 
 function analyzeWithMock(req: AnalyzeRequest): WrongAnswer {
-  const { questionContent, studentAnswer, correctAnswer } = req;
+  const { questionContent, questionImage, studentAnswer, studentAnswerImage, correctAnswer } = req;
 
   let errorType = errorTypes[0];
   let errorAnalysis = "在计算过程中出现运算失误，建议仔细检查每一步的符号和数值。";
@@ -160,11 +206,14 @@ function analyzeWithMock(req: AnalyzeRequest): WrongAnswer {
     question: {
       id: questionId,
       content: questionContent,
+      imageUrl: questionImage || undefined,
       subject: "数学",
       grade: "高二",
     },
     studentAnswer,
+    studentAnswerImage: studentAnswerImage || undefined,
     correctAnswer: correctAnswer || undefined,
+    correctSolution: buildFallbackSolution(correctAnswer, questionContent),
     studentSteps: [
       { stepNo: 1, content: "阅读题目，理解题意", isError: false },
       {
@@ -200,4 +249,68 @@ function safeParseJson<T>(raw: string): T {
     console.warn("[wrongAnswerAnalyzer] JSON 解析失败，使用默认值");
     return {} as T;
   }
+}
+
+function normalizeSolution(
+  raw:
+    | { step_no: number; title: string; content: string; explanation?: string }[]
+    | undefined,
+  correctAnswer: string | undefined,
+  questionContent: string
+): SolutionStep[] | undefined {
+  const steps = (raw ?? [])
+    .filter(
+      (item) =>
+        item &&
+        typeof item.content === "string" &&
+        item.content.trim().length > 0
+    )
+    .slice(0, 8)
+    .map((item, index) => ({
+      stepNo:
+        typeof item.step_no === "number" && Number.isFinite(item.step_no)
+          ? item.step_no
+          : index + 1,
+      title:
+        typeof item.title === "string" && item.title.trim()
+          ? item.title.trim()
+          : `第 ${index + 1} 步`,
+      content: item.content.trim(),
+      explanation:
+        typeof item.explanation === "string" && item.explanation.trim()
+          ? item.explanation.trim()
+          : undefined,
+    }));
+
+  if (steps.length > 0) return steps;
+  return buildFallbackSolution(correctAnswer, questionContent);
+}
+
+function buildFallbackSolution(
+  correctAnswer: string | undefined,
+  questionContent: string
+): SolutionStep[] | undefined {
+  if (!correctAnswer?.trim()) return undefined;
+
+  const question = questionContent.trim().slice(0, 80);
+  return [
+    {
+      stepNo: 1,
+      title: "审题",
+      content: `题目要求：${question}${questionContent.length > 80 ? "…" : ""}`,
+      explanation: "先明确已知条件、未知量和求解目标，再选择相应的数学工具。",
+    },
+    {
+      stepNo: 2,
+      title: "思路与关键步骤",
+      content: "根据题目条件列出关系式，按相关定义、公式或运算法则逐步推导。",
+      explanation: "注意每一步变形的依据，并检查符号、定义域和取值范围。",
+    },
+    {
+      stepNo: 3,
+      title: "最终答案",
+      content: correctAnswer.trim(),
+      explanation: "把结果代回题目条件检验，确认答案符合题意。",
+    },
+  ];
 }

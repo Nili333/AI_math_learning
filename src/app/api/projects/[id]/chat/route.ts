@@ -1,56 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getWelcomeMessage, getCompletionMessage } from "@/services/chatService";
+import { getCompletionMessage } from "@/services/chatService";
 import { processTurn } from "@/services/ai/projectTutor";
 import {
-  buildInitialTasks,
-  ensureTrackingFields,
   applyTurn,
+  ensureTrackingFields,
   findActiveTask,
   isProjectCompleted,
 } from "@/services/projectTaskState";
-import { mockTextbookQuestions, generateMockProject } from "@/mock";
-import type {
-  Message,
-  ProjectTask,
-  ChatRequest,
-  ChatResponse,
-  Project,
-} from "@/types";
+import {
+  appendMessage,
+  getConversation,
+  getProject,
+  updateProjectTasks,
+} from "@/services/serverStore";
+import type { ChatRequest, ChatResponse, Message } from "@/types";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+// ============================================
+// GET /api/projects/{id}/chat
+// 恢复会话：返回历史消息、任务状态与项目完成情况
+// ============================================
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const project = await getProject(params.id);
+  if (!project) {
+    return NextResponse.json({ message: "项目不存在" }, { status: 404 });
+  }
+
+  const tasks = ensureTrackingFields(project.tasks, project.id);
+  const conversation = await getConversation(project.id);
+
+  return NextResponse.json(
+    {
+      project: { ...project, tasks },
+      tasks,
+      messages: conversation.messages,
+      conversationId: conversation.id,
+      projectCompleted: isProjectCompleted(tasks),
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
+}
 
 // ============================================
 // POST /api/projects/{id}/chat
 // 统一对话入口（文字 / 图片 / 文字+图片）
 //
 // 流程：
-//   学生消息 → 任务状态分析（Qwen/Mock）
+//   学生消息 → AI 状态分析（Qwen/Mock）
 //   → 任务状态机推进（检查点/完成/切换）
-//   → 返回导师回复与完整状态
+//   → 持久化消息与任务状态，返回导师回复
 // ============================================
-
-// 内存中保存会话状态（Mock，未来替换为真实数据库）
-interface ConversationState {
-  tasks: ProjectTask[];
-  messages: Message[];
-}
-
-const conversationStore = new Map<string, ConversationState>();
-
-function getOrCreateState(
-  projectId: string,
-  conversationId: string
-): ConversationState {
-  const key = `${projectId}_${conversationId}`;
-  let state = conversationStore.get(key);
-  if (!state) {
-    const tasks = buildInitialTasks(projectId);
-    tasks[0].status = "inProgress";
-    const welcome = getWelcomeMessage(conversationId);
-    state = { tasks, messages: [welcome] };
-    conversationStore.set(key, state);
-  }
-  return state;
-}
-
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -58,58 +63,61 @@ export async function POST(
   try {
     const projectId = params.id;
     const body: ChatRequest = await req.json();
-    const { message, conversationId, imageUrl } = body;
+    const { message, imageUrl } = body;
 
-    if (!conversationId) {
-      return NextResponse.json(
-        { message: "缺少会话ID" },
-        { status: 400 }
-      );
+    const project = await getProject(projectId);
+    if (!project) {
+      return NextResponse.json({ message: "项目不存在" }, { status: 404 });
     }
 
-    const state = getOrCreateState(projectId, conversationId);
+    const tasks = ensureTrackingFields(project.tasks, projectId);
+    project.tasks = tasks;
 
-    // —— 初始化消息：仅确保会话存在，不做分析 ——
+    const conversation = await getConversation(projectId);
+    const conversationId = conversation.id;
+
+    // —— 初始化：返回已有欢迎语与会话状态，不重复写入 ——
     if (message === "__init__") {
       return NextResponse.json({
-        message: getWelcomeMessage(conversationId),
-        updatedTasks: state.tasks,
-        projectCompleted: false,
+        message: conversation.messages[0],
+        updatedTasks: tasks,
+        projectCompleted: isProjectCompleted(tasks),
+        currentTaskId: findActiveTask(tasks)?.id,
+        conversationId,
       } satisfies ChatResponse);
     }
 
-    if (!message && !imageUrl) {
+    if (!message?.trim() && !imageUrl) {
       return NextResponse.json(
         { message: "消息内容不能为空" },
         { status: 400 }
       );
     }
 
-    // 兼容旧数据：补全新增追踪字段
-    state.tasks = ensureTrackingFields(state.tasks, projectId);
-
-    // 构建完整项目上下文（任务以会话实时状态为准）
-    const project: Project = generateMockProject(
-      projectId.replace("proj_", ""),
-      mockTextbookQuestions[1]
-    );
-    project.tasks = state.tasks;
-    project.id = projectId;
-
-    const currentTask = findActiveTask(state.tasks);
-    if (!currentTask) {
+    if (isProjectCompleted(tasks)) {
       return NextResponse.json({
         message: getCompletionMessage(conversationId),
-        updatedTasks: state.tasks,
+        updatedTasks: tasks,
         projectCompleted: true,
+        conversationId,
       } satisfies ChatResponse);
     }
 
-    const studentText = message || "";
+    const currentTask = findActiveTask(tasks);
+    if (!currentTask) {
+      return NextResponse.json({
+        message: getCompletionMessage(conversationId),
+        updatedTasks: tasks,
+        projectCompleted: true,
+        conversationId,
+      } satisfies ChatResponse);
+    }
+
+    const studentText = message?.trim() ?? "";
 
     // 1) 记录学生消息
     const studentMsg: Message = {
-      id: `msg_student_${Date.now()}`,
+      id: `msg_student_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       conversationId,
       role: "student",
       type: imageUrl && studentText ? "text_and_image" : imageUrl ? "image" : "text",
@@ -117,45 +125,48 @@ export async function POST(
       imageUrl: imageUrl || undefined,
       sendTime: new Date().toISOString(),
     };
-    state.messages.push(studentMsg);
 
     // 2) AI 状态分析（真实 Qwen 或 Mock），导师回复在 evaluation.reply
     const evaluation = await processTurn({
-      project,
+      project: { ...project, tasks },
       currentTask,
       studentText,
       studentImageUrl: imageUrl,
-      recentMessages: state.messages.slice(0, -1),
+      recentMessages: conversation.messages,
     });
 
     // 3) 状态机推进：检查点 / 任务完成 / 自动进入下一任务
     const transition = applyTurn(
-      state.tasks,
+      tasks,
       currentTask.taskNo,
       studentText,
       imageUrl,
       evaluation
     );
-    state.tasks = transition.tasks;
 
+    const savedProject = await updateProjectTasks(projectId, transition.tasks);
+    const updatedTasks = savedProject?.tasks ?? transition.tasks;
+    const projectCompleted = isProjectCompleted(updatedTasks);
+
+    // 4) 写回会话消息
     const aiMessage: Message = {
-      id: `msg_ai_${Date.now()}`,
+      id: `msg_ai_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       conversationId,
       role: "ai",
       type: "text",
       content: evaluation.reply,
       sendTime: new Date().toISOString(),
     };
-    state.messages.push(aiMessage);
 
-    const projectCompleted = isProjectCompleted(state.tasks);
+    await appendMessage(projectId, studentMsg);
+    await appendMessage(projectId, aiMessage);
     if (projectCompleted) {
-      state.messages.push(getCompletionMessage(conversationId));
+      await appendMessage(projectId, getCompletionMessage(conversationId));
     }
 
     const response: ChatResponse = {
       message: aiMessage,
-      updatedTasks: state.tasks,
+      updatedTasks,
       projectCompleted,
       taskStatus: transition.taskStatus,
       taskCompleted: transition.taskCompleted,

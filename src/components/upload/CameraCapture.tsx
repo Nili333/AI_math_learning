@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Camera, RotateCcw, Check, X } from "lucide-react";
@@ -77,7 +77,10 @@ export function CameraCapture({ onCapture, onCancel }: CameraCaptureProps) {
     <div className="space-y-4">
       <div className="relative aspect-[4/3] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
         {cameraState === "streaming" && (<video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />)}
-        {cameraState === "captured" && capturedUrl && (<img src={capturedUrl} alt="拍摄预览" className="w-full h-full object-contain" />)}
+        {cameraState === "captured" && capturedUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={capturedUrl} alt="拍摄预览" className="w-full h-full object-contain" />
+        )}
         {cameraState === "requesting" && (<p className="text-slate-300 text-sm">正在请求摄像头权限...</p>)}
         {cameraState === "error" && (<div className="text-center px-6"><X className="w-10 h-10 text-red-400 mx-auto mb-2" /><p className="text-slate-200 text-sm">{errorMsg}</p></div>)}
       </div>

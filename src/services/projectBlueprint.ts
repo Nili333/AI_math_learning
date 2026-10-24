@@ -5,6 +5,8 @@
 // Mock 评估与真实模型的上下文组织均复用此定义
 // ============================================
 
+import type { ProjectTask } from "@/types";
+
 export interface CheckpointDef {
   question: string; // 该检查点的引导问题
   acceptKeywords: string[]; // Mock：命中任一关键词即通过
@@ -246,4 +248,31 @@ export const TASK_BLUEPRINTS: TaskBlueprintDef[] = [
 
 export function getBlueprint(taskNo: number): TaskBlueprintDef {
   return TASK_BLUEPRINTS[taskNo - 1];
+}
+
+/**
+ * 解析某个任务实际使用的检查点：
+ *   - AI 定制项目自带 checkpoints 时优先使用；
+ *   - 旧数据 / 模板项目回退到全局蓝图。
+ */
+export function getCheckpointsForTask(
+  task: Pick<ProjectTask, "taskNo" | "checkpoints">
+): CheckpointDef[] {
+  const fallback = getBlueprint(task.taskNo)?.checkpoints ?? [];
+  const source = task.checkpoints?.length ? task.checkpoints : fallback;
+
+  return source.map((checkpoint, index) => {
+    const hints = [...(checkpoint.hints ?? [])];
+    while (hints.length < 4) {
+      hints.push(
+        fallback[index]?.hints[hints.length] ??
+          "再仔细读一遍题目，看看哪个条件还没有用上。"
+      );
+    }
+    return {
+      question: checkpoint.question,
+      acceptKeywords: checkpoint.acceptKeywords ?? [],
+      hints: [hints[0], hints[1], hints[2], hints[3]],
+    };
+  });
 }

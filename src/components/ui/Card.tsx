@@ -10,7 +10,23 @@ export function Card({ children, className = "", onClick }: CardProps) {
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-xl border border-border shadow-sm ${onClick ? "cursor-pointer hover:shadow-md transition-shadow" : ""} ${className}`}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      className={`bg-white rounded-xl border border-border shadow-sm ${
+        onClick
+          ? "cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+          : ""
+      } ${className}`}
     >
       {children}
     </div>

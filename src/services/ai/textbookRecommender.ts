@@ -27,7 +27,14 @@ export async function recommendTextbookQuestions(
   wrongAnswer?: WrongAnswer
 ): Promise<TextbookQuestion[]> {
   if (hasRealAIKey() && wrongAnswer) {
-    return recommendWithAI(wrongAnswer);
+    try {
+      return await recommendWithAI(wrongAnswer);
+    } catch (err) {
+      console.error(
+        "[textbookRecommender] AI 推荐失败，降级为本地母题：",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
   return mockTextbookQuestions;
 }
@@ -45,6 +52,8 @@ async function recommendWithAI(
 - 中文说明文字不要放入 $ 分隔符内
 
 任务：根据学生的错题情况，推荐3道最具针对性的教材原题，帮助学生巩固薄弱知识点。
+教材范围：人教A版选择性必修第二册，第五章「一元函数的导数及其应用」。
+题目表述中的章节请统一写为“第五章 一元函数的导数及其应用”，不要编造不存在的章节号。
 
 可用知识点：
 ${knowledgePoints.map((kp) => `- ${kp.id} ${kp.name}`).join("\n")}

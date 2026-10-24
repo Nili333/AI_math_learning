@@ -37,3 +37,17 @@ next-env.d.ts
 
 # 用户上传的图片
 /uploads/
+
+# 本地持久化数据（错题、项目、对话、评价）
+/.data/
+
+# 本地临时工具 / 调试产物
+/cloudflared.exe
+/.chrome-profile/
+/.screenshots/
+
+# 本地素材（题库图片、教材文档，体积较大，不提交到代码仓库）
+/错题*/
+/*.docx
+/*.pdf
+/*.xlsx

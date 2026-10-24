@@ -2,10 +2,13 @@
 
 import {
   CheckCircle2, Circle, Lock, AlertCircle,
-  BookOpen, ChevronDown, ChevronUp, X, ListChecks,
+  BookOpen, ChevronDown, ChevronUp, X, ListChecks, Target,
 } from "lucide-react";
 import { useState } from "react";
 import type { Project, ProjectTask } from "@/types";
+import { MathText } from "@/components/ui/MathText";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { getCheckpointsForTask } from "@/services/projectBlueprint";
 
 interface ProjectSidebarProps {
   project: Project;
@@ -22,7 +25,7 @@ export function ProjectSidebar({
   completedCount,
   onClose,
 }: ProjectSidebarProps) {
-  const [showQuestion, setShowQuestion] = useState(true);
+  const [showQuestion, setShowQuestion] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
 
   // 当前任务状态文字（不仅用颜色区分）
@@ -33,10 +36,17 @@ export function ProjectSidebar({
       ? "进行中"
       : "全部完成";
 
+  const checkpointTotal = currentTask
+    ? getCheckpointsForTask(currentTask).length
+    : 0;
+  const checkpointCurrent = currentTask
+    ? Math.min(currentTask.checkpointIndex + 1, checkpointTotal)
+    : 0;
+
   return (
-    <div className="h-full bg-white rounded-xl border border-border p-5 flex flex-col">
+    <div className="h-full bg-white rounded-xl border border-border p-5 flex flex-col overflow-hidden">
       {/* 项目标题区 */}
-      <div className="mb-4 pb-4 border-b border-slate-100">
+      <div className="mb-4 pb-4 border-b border-slate-100 flex-shrink-0">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold text-slate-800">{project.name}</h3>
           {onClose && (
@@ -50,7 +60,21 @@ export function ProjectSidebar({
         </p>
         <p className="text-xs text-slate-500 mt-0.5">
           状态：<span className="font-medium">{currentStatusText}</span>
+          {currentTask && checkpointTotal > 0 && (
+            <span className="ml-1">
+              · 检查点 {checkpointCurrent}/{checkpointTotal}
+            </span>
+          )}
         </p>
+
+        {currentTask && checkpointTotal > 0 && (
+          <div className="mt-2">
+            <ProgressBar
+              value={Math.round((currentTask.checkpointIndex / checkpointTotal) * 100)}
+              color={currentTask.status === "needsGuidance" ? "warning" : "primary"}
+            />
+          </div>
+        )}
 
         {/* 题目查看器 */}
         <button
@@ -71,11 +95,11 @@ export function ProjectSidebar({
           <div className="mt-2 p-3 rounded-lg bg-amber-50/60 border border-amber-100 text-xs text-slate-700 space-y-2">
             <p className="leading-relaxed">
               <span className="font-semibold text-slate-800">【题目】</span>
-              {project.sourceTextbookQuestion.content}
+              <MathText>{project.sourceTextbookQuestion.content}</MathText>
             </p>
             <p className="leading-relaxed">
               <span className="font-semibold text-slate-800">【背景】</span>
-              {project.background}
+              <MathText>{project.background}</MathText>
             </p>
           </div>
         )}
@@ -83,7 +107,7 @@ export function ProjectSidebar({
 
       {/* 当前任务详情：目标 + 完成标准 */}
       {currentTask && (
-        <div className="mb-4 pb-4 border-b border-slate-100">
+        <div className="mb-4 pb-4 border-b border-slate-100 flex-shrink-0">
           <button
             onClick={() => setShowDetail((v) => !v)}
             className="w-full flex items-center justify-between gap-2 text-left"
@@ -102,7 +126,9 @@ export function ProjectSidebar({
           {showDetail && (
             <div className="mt-2 space-y-2">
               <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-100">
-                <p className="text-xs font-medium text-slate-700 mb-1">任务目标</p>
+                <p className="text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <Target className="w-3.5 h-3.5 text-primary" /> 任务目标
+                </p>
                 <p className="text-xs text-slate-600 leading-relaxed">{currentTask.objective}</p>
               </div>
               <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
@@ -121,13 +147,22 @@ export function ProjectSidebar({
                   当前提示级别：Level {currentTask.hintLevel}（已提示 {currentTask.hintCount} 次）
                 </p>
               )}
+              {currentTask.currentError && (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                  <p className="text-xs font-medium text-amber-700 mb-1">最近识别到的卡点</p>
+                  <p className="text-xs text-amber-700/90 leading-relaxed">{currentTask.currentError}</p>
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400 px-1">
+                已尝试 {currentTask.attemptCount} 次
+              </p>
             </div>
           )}
         </div>
       )}
 
       {/* 任务列表 */}
-      <div className="flex-1 space-y-2 overflow-y-auto">
+      <div className="flex-1 min-h-[150px] space-y-2 overflow-y-auto pr-1">
         {tasks.map((task) => {
           const isCurrent = task.status === "inProgress" || task.status === "needsGuidance";
           const isCompleted = task.status === "completed";
@@ -168,7 +203,7 @@ export function ProjectSidebar({
       </div>
 
       {/* 进度 */}
-      <div className="pt-4 border-t border-slate-100 mt-4">
+      <div className="pt-4 border-t border-slate-100 mt-4 flex-shrink-0">
         <p className="text-sm text-slate-500">
           当前进度：<span className="font-bold text-primary">{completedCount}/{tasks.length}</span>
         </p>

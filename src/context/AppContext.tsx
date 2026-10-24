@@ -1,6 +1,14 @@
 "use client";
 
-import React, { createContext, useContext, useReducer, useCallback, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useCallback,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
 import type { User, StudentProfile, Project, WrongAnswer, Evaluation } from "@/types";
 
 // ============================================
@@ -33,6 +41,8 @@ const initialState: AppState = {
   currentProject: null,
   currentEvaluation: null,
 };
+
+const SESSION_KEY = "ai-math-learning-session";
 
 function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -73,12 +83,49 @@ interface AppContextValue {
   dispatch: React.Dispatch<AppAction>;
   login: (user: User, token: string) => void;
   logout: () => void;
+  /** 是否已完成本地会话恢复，用于避免刷新时误跳转登录页 */
+  hydrated: boolean;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const [hydrated, setHydrated] = useState(false);
+
+  // 启动时从 localStorage 恢复会话
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const session = JSON.parse(raw) as { user?: User; token?: string };
+        if (session.user?.id && session.token) {
+          dispatch({ type: "LOGIN", user: session.user, token: session.token });
+        }
+      }
+    } catch {
+      // 忽略损坏的本地会话
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+
+  // 会话变化时持久化
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      if (state.user && state.token) {
+        window.localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({ user: state.user, token: state.token })
+        );
+      } else {
+        window.localStorage.removeItem(SESSION_KEY);
+      }
+    } catch {
+      // localStorage 不可用时不影响主流程
+    }
+  }, [hydrated, state.user, state.token]);
 
   const login = useCallback((user: User, token: string) => {
     dispatch({ type: "LOGIN", user, token });
@@ -86,10 +133,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     dispatch({ type: "LOGOUT" });
+    try {
+      window.localStorage.removeItem(SESSION_KEY);
+    } catch {
+      // ignore
+    }
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, login, logout }}>
+    <AppContext.Provider value={{ state, dispatch, login, logout, hydrated }}>
       {children}
     </AppContext.Provider>
   );

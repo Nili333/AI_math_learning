@@ -8,13 +8,17 @@
 // ============================================
 
 import type { ProjectTask, TaskAttempt, TurnEvaluation, TaskStatus } from "@/types";
-import { getBlueprint, TASK_BLUEPRINTS } from "./projectBlueprint";
+import { getBlueprint, TASK_BLUEPRINTS, type TaskBlueprintDef } from "./projectBlueprint";
 
 export const MAX_HINT_LEVEL = 4;
 
-// —— Mock 项目启动时构建带完整追踪字段的任务列表 ——
-export function buildInitialTasks(projectId: string): ProjectTask[] {
-  return TASK_BLUEPRINTS.map((bp) => {
+// —— 项目启动时构建带完整追踪字段的任务列表 ——
+// blueprints 默认使用易拉罐项目；AI 定制项目可传入自己的任务蓝图
+export function buildInitialTasks(
+  projectId: string,
+  blueprints: TaskBlueprintDef[] = TASK_BLUEPRINTS
+): ProjectTask[] {
+  return blueprints.map((bp) => {
     const task: ProjectTask = {
       id: `${projectId}_task_${bp.taskNo}`,
       projectId,
@@ -24,6 +28,11 @@ export function buildInitialTasks(projectId: string): ProjectTask[] {
       objective: bp.objective,
       completionCriteria: bp.completionCriteria,
       status: "notStarted",
+      checkpoints: bp.checkpoints.map((checkpoint) => ({
+        question: checkpoint.question,
+        acceptKeywords: [...checkpoint.acceptKeywords],
+        hints: [...checkpoint.hints],
+      })),
       checkpointIndex: 0,
       hintLevel: 0,
       hintCount: 0,
@@ -51,8 +60,17 @@ export function ensureTrackingFields(
       attemptCount: t.attemptCount ?? 0,
       selfCorrected: t.selfCorrected ?? false,
       attempts: t.attempts ?? [],
-      objective: bp?.objective ?? t.description,
-      completionCriteria: bp?.completionCriteria ?? [],
+      objective: t.objective || bp?.objective || t.description,
+      completionCriteria:
+        t.completionCriteria?.length > 0 ? t.completionCriteria : bp?.completionCriteria ?? [],
+      checkpoints:
+        t.checkpoints && t.checkpoints.length > 0
+          ? t.checkpoints
+          : bp?.checkpoints.map((checkpoint) => ({
+              question: checkpoint.question,
+              acceptKeywords: [...checkpoint.acceptKeywords],
+              hints: [...checkpoint.hints],
+            })) ?? [],
       id: t.id || `${projectId}_task_${t.taskNo}`,
       projectId: t.projectId || projectId,
     };
@@ -85,7 +103,6 @@ export function applyTurn(
   evaluation: TurnEvaluation
 ): ApplyTurnResult {
   const now = new Date().toISOString();
-  const bp = getBlueprint(taskNo);
   const targetTask = tasks.find((t) => t.taskNo === taskNo);
   if (!targetTask) {
     throw new Error(`当前任务 ${taskNo} 不存在`);
@@ -140,13 +157,13 @@ export function applyTurn(
     });
 
     // —— 自动推进下一任务 ——
-    const nextBp = bp ? getBlueprint(taskNo + 1) : undefined;
-    if (nextBp) {
-      nextTaskId = updatedTasks.find((t) => t.taskNo === taskNo + 1)?.id ?? null;
+    const nextTask = updatedTasks.find((t) => t.taskNo === taskNo + 1);
+    if (nextTask) {
+      nextTaskId = nextTask.id;
       updatedTasks = updatedTasks.map((t) =>
         t.taskNo === taskNo + 1 ? { ...t, status: "inProgress" } : t
       );
-      transitionNotice = `很好！你已经完成了任务${taskNo}「${bp?.title ?? ""}」，现在我们进入任务${taskNo + 1}「${nextBp.title}」。`;
+      transitionNotice = `很好！你已经完成了任务${taskNo}「${targetTask.title}」，现在我们进入任务${taskNo + 1}「${nextTask.title}」。`;
     }
   } else if (evaluation.checkpointPassed) {
     // —— 检查点通过但任务未完成：推进到下一检查点 ——
@@ -180,12 +197,12 @@ export function applyTurn(
       };
     });
   } else {
-    // —— 未通过：进入需要引导状态，提示级别自动升级 ——
+    // —— 未通过：有明确错误才进入"需要引导"，只是回答不完整则保持进行中 ——
     const hasError = evaluation.errorDetected;
     hintLevel = hasError
       ? Math.min(targetTask.hintLevel + 1, MAX_HINT_LEVEL)
-      : targetTask.hintLevel; // 纯图片等中性情况不升级
-    taskStatus = "needsGuidance";
+      : targetTask.hintLevel;
+    taskStatus = hasError ? "needsGuidance" : "inProgress";
 
     const attempt: TaskAttempt = {
       attemptNo: targetTask.attemptCount + 1,
@@ -203,7 +220,7 @@ export function applyTurn(
       if (t.taskNo !== taskNo) return t;
       return {
         ...t,
-        status: "needsGuidance",
+        status: taskStatus,
         hintLevel,
         hintCount: hasError ? t.hintCount + 1 : t.hintCount,
         attemptCount: t.attemptCount + 1,

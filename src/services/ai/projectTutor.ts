@@ -15,7 +15,7 @@
 import { qwenChat, extractText, type QwenMessage } from "./qwen";
 import { AI_CONFIG, hasRealAIKey } from "./config";
 import { resolveImageForModel } from "./imageResolver";
-import { getBlueprint } from "../projectBlueprint";
+import { getCheckpointsForTask } from "../projectBlueprint";
 import type {
   Project,
   Message,
@@ -35,9 +35,39 @@ export async function processTurn(
   params: ProcessTurnParams
 ): Promise<TurnEvaluation> {
   if (hasRealAIKey()) {
-    return evaluateWithQwen(params);
+    try {
+      const result = await evaluateWithQwen(params);
+      return normalizeTurnResult(result, params.currentTask);
+    } catch (err) {
+      console.error(
+        "[projectTutor] AI 导师调用失败，降级为本地判定：",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
   return evaluateWithMock(params);
+}
+
+/**
+ * 模型偶尔会漏填 task_completed：如果当前已是最后一个检查点且检查点通过，
+ * 必须判定任务完成，否则状态机会推进到不存在的检查点导致卡住。
+ */
+function normalizeTurnResult(
+  result: TurnEvaluation,
+  currentTask: ProjectTask
+): TurnEvaluation {
+  const checkpoints = getCheckpointsForTask(currentTask);
+  const isLastCheckpoint =
+    checkpoints.length === 0 ||
+    currentTask.checkpointIndex + 1 >= checkpoints.length;
+
+  if (result.checkpointPassed && isLastCheckpoint && !result.taskCompleted) {
+    return { ...result, taskCompleted: true };
+  }
+  if (result.taskCompleted && !result.checkpointPassed) {
+    return { ...result, checkpointPassed: true };
+  }
+  return result;
 }
 
 // ============================================
@@ -75,7 +105,11 @@ async function evaluateWithQwen(
   ];
 
   const response = await qwenChat(messages, {
-    model: AI_CONFIG.projectTutorModel,
+    // 含图片的对话必须走视觉模型；纯文字使用响应更快的文本模型
+    model:
+      studentImageUrl || recentMessages.some((message) => message.imageUrl)
+        ? AI_CONFIG.vlModel
+        : AI_CONFIG.projectTutorModel,
     temperature: AI_CONFIG.temperature,
     maxTokens: AI_CONFIG.maxTokens,
     responseFormat: "json_object",
@@ -89,8 +123,7 @@ function buildSystemPrompt(
   project: Project,
   task: ProjectTask
 ): string {
-  const bp = getBlueprint(task.taskNo);
-  const checkpoints = bp?.checkpoints ?? [];
+  const checkpoints = getCheckpointsForTask(task);
   const currentCheckpoint = checkpoints[task.checkpointIndex];
 
   const taskListText = project.tasks
@@ -261,8 +294,7 @@ function parseAnalysis(raw: string): TurnEvaluation {
 
 function evaluateWithMock(params: ProcessTurnParams): TurnEvaluation {
   const { currentTask, studentText, studentImageUrl } = params;
-  const bp = getBlueprint(currentTask.taskNo);
-  const checkpoints = bp?.checkpoints ?? [];
+  const checkpoints = getCheckpointsForTask(currentTask);
   const checkpoint = checkpoints[currentTask.checkpointIndex];
   const isLastCheckpoint =
     currentTask.checkpointIndex + 1 >= checkpoints.length;

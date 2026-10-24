@@ -29,12 +29,35 @@ export async function qwenChat(messages: QwenMessage[], options: QwenChatOptions
     body.response_format = { type: "json_object" };
   }
 
-  const res = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${AI_CONFIG.apiKey}` },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) { const errText = await res.text().catch(() => ""); throw new Error(`Qwen 调用失败 (HTTP ${res.status}): ${errText || res.statusText}`); }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${AI_CONFIG.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${AI_CONFIG.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Qwen 调用超时（120 秒），请稍后重试");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(
+      `Qwen 调用失败 (HTTP ${res.status}): ${errText || res.statusText}`
+    );
+  }
   return (await res.json()) as QwenResponse;
 }
 

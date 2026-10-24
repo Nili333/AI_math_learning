@@ -16,11 +16,12 @@ export const AI_CONFIG = {
     process.env.DASHSCOPE_BASE_URL ||
     "https://dashscope.aliyuncs.com/compatible-mode/v1",
   // 默认模型：qwen-plus（效果/速度/成本均衡，推荐首选）
-  // 可选：qwen3.8-max / qwen3-max / qwen-max /
-  //       qwen3.6-plus / qwen3.5-plus / qwen-plus / qwen-plus-latest /
-  //       qwen3.6-flash / qwen3.5-flash / qwen-flash /
-  //       qwen-turbo
+  // 可选文本模型：qwen3.8-max / qwen3.7-plus / qwen3.8-flash / qwen-plus / qwen-turbo
   model: process.env.QWEN_MODEL || "qwen-plus",
+  // 视觉模型：支持图像理解（OCR、手写解答分析）
+  // qwen3-vl-plus 在识别准确率与响应速度之间比较均衡；
+  // 也可换成 qwen3.8-max 等更强的多模态模型（更慢）。
+  vlModel: process.env.QWEN_VL_MODEL || "qwen3-vl-plus",
   projectTutorModel: process.env.QWEN_PROJECT_TUTOR_MODEL || "qwen-plus",
   temperature: 0.3,
   maxTokens: 1500,
