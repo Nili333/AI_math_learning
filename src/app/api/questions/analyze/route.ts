@@ -5,6 +5,7 @@ import type { AnalyzeRequest } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 180;
 
 // ============================================
 // POST /api/questions/analyze

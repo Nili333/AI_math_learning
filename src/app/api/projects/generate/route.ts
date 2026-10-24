@@ -5,6 +5,7 @@ import type { TextbookQuestion } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 300; // AI 生成完整 5 任务方案，Vercel Fluid Compute 默认上限
 
 // ============================================
 // POST /api/projects/generate?wrongAnswerId={id}

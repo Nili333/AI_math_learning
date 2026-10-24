@@ -4,6 +4,7 @@ import { getWrongAnswer } from "@/services/serverStore";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 90;
 
 // ============================================
 // GET /api/textbook/questions?wrongAnswerId={id}
