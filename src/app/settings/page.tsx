@@ -155,9 +155,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="p-3 rounded-lg bg-blue-50/60 border border-blue-100 text-xs text-slate-600 leading-relaxed">
-                  配置方式：在项目根目录的 <code className="font-mono">.env.local</code> 中填写
-                  <code className="font-mono"> DASHSCOPE_API_KEY</code>，重启开发服务器即可。
-                  详细说明见项目 README。
+                  配置方式：本地开发在项目根目录的 <code className="font-mono">.env.local</code> 中填写
+                  <code className="font-mono"> DASHSCOPE_API_KEY</code>；线上部署在 Vercel 项目的
+                  Environment Variables 中配置，修改后重新部署即可生效。详细说明见项目 README。
                 </div>
               </div>
             ) : (

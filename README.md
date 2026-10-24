@@ -4,6 +4,14 @@
 
 > 技术栈：Next.js 14（App Router）· React 18 · TypeScript · Tailwind CSS · KaTeX · 通义千问（DashScope OpenAI 兼容模式）
 
+## 线上演示
+
+https://aimathlearning.vercel.app
+
+演示账号：`student01 / 123456`
+
+线上数据存储于 Neon Postgres，团队成员访问同一地址即可共享学习数据。
+
 ---
 
 ## 一、功能一览
